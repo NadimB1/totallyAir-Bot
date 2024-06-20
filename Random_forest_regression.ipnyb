@@ -1,0 +1,77 @@
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+
+from google.colab import drive
+drive.mount('/content/drive')
+import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
+import pandas as pd
+import numpy as np
+import os
+import datetime
+import glob
+import seaborn as sns
+# Prétraitement et suppression de certaines lignes ou colonnes
+
+# Chemin vers le répertoire contenant les fichiers de gazs
+chemin = "/content/drive/MyDrive/projet_annuel_4IABD/gazs/*.csv"
+
+# Liste de tous les fichiers CSV dans le répertoire
+fichiers_csv = glob.glob(chemin)
+
+df = pd.DataFrame() # stocke les données concaténées
+
+# Parcoure les fichiers CSV et les concaténe
+for fichier_csv in fichiers_csv:
+    df_file = pd.read_csv(fichier_csv, sep=";")
+
+    # Vérifier si les colonnes existent avant de les supprimer
+    for column in ["taux de saisie", "couverture temporelle", "couverture de données", "Date de fin", "discriminant", "code qualité", "validité", "valeur", "Organisme", "code zas", "code site", "nom site", "procédure de mesure"]:
+        if column in df_file.columns:
+            df_file = df_file.drop(columns=column)
+
+    # On garde que les lignes où Réglementaire est à Oui et on supprime ensuite la colonne
+    if "Réglementaire" in df_file.columns:
+      df_file = df_file[df_file['Réglementaire'] == 'Oui']
+      df_file = df_file.drop(columns=["Réglementaire"])
+    df_file['Polluant'] = df_file['Polluant'].replace({'NOX as NO2': 'NOX'})
+    df_file = df_file.dropna(subset=["valeur brute"])
+
+    df = pd.concat([df, df_file])
+
+# Supprime les lignes où valeur brute est inférieure à zéro
+df = df[df['valeur brute'] >= 0]
+
+# On garde la 'valeur brute' moyenne pour toutes ces colonnes :
+df_mean = df.groupby(
+    ["Date de début", "Zas", "type d'implantation", "Polluant", "type d'influence", "type d'évaluation", "type de valeur", "unité de mesure"]
+)["valeur brute"].mean().reset_index().rename(columns={"valeur brute": "valeur moyenne"})
+
+df_mean['Date de début'] = pd.to_datetime(df_mean['Date de début'])
+df_mean.to_csv('/content/drive/MyDrive/projet_annuel_4IABD/gaz_data.csv', index=False)
+# Load the data
+df = pd.read_csv('/content/drive/MyDrive/projet_annuel_4IABD/gaz_data.csv')
+
+# Convert 'Date de début' to datetime
+df['Date de début'] = pd.to_datetime(df['Date de début'])
+
+# Create 'year' and 'month' columns
+df['year'] = df['Date de début'].dt.year
+df['month'] = df['Date de début'].dt.month
+
+# mean by month
+df_grouped = df.groupby(['Zas', 'type d\'implantation', 'Polluant', 'type d\'influence', 'type d\'évaluation', 'type de valeur', 'unité de mesure', 'year', 'month'], as_index=False)['valeur moyenne'].mean()
+
+df_grouped.to_csv('/content/drive/MyDrive/projet_annuel_4IABD/gaz_data_months.csv', index=False)
+# Apply one-hot encoding to the categorical features
+# Define the list of column names that are categorical features
+ct = ColumnTransformer(transformers=[('encoder', OneHotEncoder(), categorical_cols)], remainder='passthrough', sparse_threshold=0)
+data_encoded = pd.DataFrame(ct.fit_transform(df))
+
+# Check the shape of the transformed DataFrame
+print("Transformed DataFrame shape:", data_encoded.shape)
+
+# Check the transformed DataFrame
+data_encoded.head()
